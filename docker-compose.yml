@@ -1,0 +1,96 @@
+version: "3.8"
+
+services:
+  api-gateway:
+    build: ./api-gateway
+    container_name: food-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-supersecretkey}
+    depends_on:
+      - order-service
+      - partner-service
+      - notification-service
+
+  order-service:
+    build: ./order-service
+    container_name: food-order-service
+    environment:
+      - ASPNETCORE_URLS=http://+:5000
+      - ConnectionStrings__Default=Host=order-db;Database=orders;Username=postgres;Password=postgres
+      - RabbitMQ__Host=rabbitmq
+    depends_on:
+      - order-db
+      - rabbitmq
+
+  partner-service:
+    build: ./partner-service
+    container_name: food-partner-service
+    environment:
+      - SPRING_DATA_MONGODB_URI=mongodb://partner-db:27017/partners
+      - SPRING_RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - partner-db
+      - rabbitmq
+
+  notification-service:
+    build: ./notification-service
+    container_name: food-notification-service
+    ports:
+      - "3004:3004"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@notif-db:5432/notifications
+      - REDIS_URL=redis://redis-cache:6379
+      - RABBITMQ_URL=amqp://rabbitmq
+    depends_on:
+      - notif-db
+      - redis-cache
+      - rabbitmq
+
+  order-db:
+    image: postgres:16-alpine
+    container_name: food-order-db
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - order_data:/var/lib/postgresql/data
+      - ./order-service/init/order-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  partner-db:
+    image: mongo:7
+    container_name: food-partner-db
+    volumes:
+      - partner_data:/data/db
+
+  notif-db:
+    image: postgres:16-alpine
+    container_name: food-notif-db
+    environment:
+      POSTGRES_DB: notifications
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - notif_data:/var/lib/postgresql/data
+      - ./notification-service/init/notif-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  redis-cache:
+    image: redis:7-alpine
+    container_name: food-redis-cache
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: food-rabbitmq
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+volumes:
+  order_data:
+  partner_data:
+  notif_data:
